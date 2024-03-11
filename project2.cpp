@@ -1,7 +1,9 @@
+#include <cstring>
 #include <string>
 #include <iostream>
 #include <pthread.h>
 #include <semaphore.h>
+#include <queue>
 
 #define errexit(code, str)                              \
     fprintf(stderr, "%s: %s\n", (str), strerror(code)); \
@@ -24,7 +26,13 @@ int stoiHandler(std::string s)
     return num;
 }
 
-void semWait(sem_t &sem, char *name)
+// Both bounds are inclusive
+int randomInRange(int lb, int ub)
+{
+    return (rand() % (ub - lb + 1)) + lb;
+}
+
+void semWait(sem_t &sem, const char *name)
 {
     if (sem_wait(&sem) == -1)
     {
@@ -33,7 +41,7 @@ void semWait(sem_t &sem, char *name)
     }
 }
 
-void semPost(sem_t &sem, char *name)
+void semPost(sem_t &sem, const char *name)
 {
     if (sem_post(&sem) == -1)
     {
@@ -42,9 +50,8 @@ void semPost(sem_t &sem, char *name)
     }
 }
 
-void semInit(sem_t &sem, char *name, int value)
+void semInit(sem_t &sem, const char *name, int value)
 {
-
     /* Initialize semaphore to 0 (3rd parameter) */
     if (sem_init(&sem, 0, value) == -1)
     {
@@ -55,11 +62,24 @@ void semInit(sem_t &sem, char *name, int value)
 
 // ----- Thread procedures
 
+int numDoctors;
+int numNurses;
+int numPatients;
+
 sem_t receptionistReady;
 
 int registerPatientId = -1;
-sem_t receptionistRegister;
-sem_t receptionistRegisterDone;
+sem_t receptionistPatientRegister;
+sem_t receptionistPatientRegisterDone;
+int receptionistPatients = 0;
+
+int *patientAssignNurseIds;
+sem_t *patientsWaiting;
+
+sem_t *nurseQueueProtect;
+std::queue<int> *nurseQueues;
+
+sem_t *doctorsReady;
 
 void *patientThread(void *arg)
 {
@@ -67,29 +87,48 @@ void *patientThread(void *arg)
 
     // Register phase
 
-    printf("Patient %d enters waiting room, waits for receptionist", patientId);
+    printf("Patient %d enters waiting room, waits for receptionist\n", patientId);
 
     semWait(receptionistReady, "receptionistReady");
 
     registerPatientId = patientId;
 
-    semPost(receptionistRegister, "receptionistRegister");
-    semWait(receptionistRegisterDone, "receptionistRegisterDone");
-
-    printf("Patient %d leaves receptionist and sits in waiting room", patientId);
+    semPost(receptionistPatientRegister, "receptionistPatientRegister");
+    semWait(receptionistPatientRegisterDone, "receptionistPatientRegisterDone");
 
     semPost(receptionistReady, "receptionistReady");
+
+    // Nurse phase
+
+    printf("Patient %d leaves receptionist and sits in waiting room\n", patientId);
+
+    int assignedNurseId = patientAssignNurseIds[patientId];
+    int assignedDoctorId = assignedNurseId;
+
+    semWait(patientsWaiting[patientId], "patientsWaiting - patientId");
 
     return arg;
 }
 
 void *receptionistThread(void *arg)
 {
-    semWait(receptionistRegister, "receptionistRegister");
+    while (receptionistPatients < numPatients)
+    {
+        semWait(receptionistPatientRegister, "receptionistPatientRegister");
 
-    printf("Receptionist receives patient %d", registerPatientId);
+        printf("Receptionist receives patient %d\n", registerPatientId);
 
-    semPost(receptionistRegisterDone, "receptionistRegisterDone");
+        int randomNurseId = randomInRange(0, numNurses - 1);
+        patientAssignNurseIds[registerPatientId] = randomNurseId;
+
+        semWait(nurseQueueProtect[randomNurseId], "nurseQueueProtect - randomNurseId");
+        nurseQueues[randomNurseId].push(registerPatientId);
+        semPost(nurseQueueProtect[randomNurseId], "nurseQueueProtect - randomNurseId");
+
+        receptionistPatients++;
+
+        semPost(receptionistPatientRegisterDone, "receptionistPatientRegisterDone");
+    }
 
     return arg;
 }
@@ -104,26 +143,57 @@ void *doctorThread(void *arg)
 void *nurseThread(void *arg)
 {
     int nurseId = *(int *)arg;
-    std::cout << "Nurse " << nurseId << std::endl;
+    int doctorId = nurseId;
+
+    semWait(doctorsReady[doctorId], "doctorsReady - doctorId");
+
+    semWait(nurseQueueProtect[nurseId], "nurseQueueProtect - randomNurseId");
+    int patientId = nurseQueues[nurseId].front();
+    nurseQueues[nurseId].pop();
+    semPost(nurseQueueProtect[nurseId], "nurseQueueProtect - randomNurseId");
+
+    printf("Nurse %d takes patient %d to doctor's office", nurseId, patientId);
+
+    semPost(patientsWaiting[patientId], "patientsWaiting - patientId");
+
     return arg;
 }
 
 // ----- Init threads
 
+pthread_t receptionist;
+
+pthread_t patients[15];
+int patientIds[15];
+
+pthread_t doctors[3];
+int doctorIds[3];
+
+pthread_t nurses[3];
+int nurseIds[3];
+
+int errcode; /* holds pthread error code */
+int *status; /* holds return code */
+
 void initSemaphores()
 {
     semInit(receptionistReady, "receptionistReady", 1);
-    semInit(receptionistRegister, "receptionistRegister", 0);
-    semInit(receptionistRegisterDone, "receptionistRegisterDone", 0);
+    semInit(receptionistPatientRegister, "receptionistPatientRegister", 0);
+    semInit(receptionistPatientRegisterDone, "receptionistPatientRegisterDone", 0);
+
+    for (int patientId = 0; patientId < numPatients; patientId++)
+    {
+        semInit(patientsWaiting[patientId], "patientsWaiting - patientId", 0);
+    }
+
+    for (int nurseId = 0; nurseId < numNurses; nurseId++)
+    {
+        semInit(nurseQueueProtect[nurseId], "nurseQueueProtect - nurseId", 1);
+    }
 }
 
-void initPatients(int numPatients)
+void initPatients()
 {
-    pthread_t patients[15];
-    int patientIds[15];
-    int errcode; /* holds pthread error code */
-    int *status; /* holds return code */
-
     int patientId;
 
     /* Create patient threads */
@@ -144,33 +214,10 @@ void initPatients(int numPatients)
             errexit(errcode, "pthread_create");
         }
     }
-
-    /* join the threads as they exit */
-    for (patientId = 0; patientId < numPatients; patientId++)
-    {
-        errcode = pthread_join(patients[patientId], (void **)&status);
-
-        if (errcode)
-        {
-            errexit(errcode, "pthread_join");
-        }
-
-        /* check thread's exit status, should be the same as the
-        thread number for this example */
-        if (*status != patientId)
-        {
-            fprintf(stderr, "thread %d terminated abnormally\n", patientId);
-            exit(1);
-        }
-    }
 }
 
 void initReceptionist()
 {
-    pthread_t receptionist;
-    int errcode; /* holds pthread error code */
-    int *status; /* holds return code */
-
     /* create thread */
     errcode = pthread_create(&receptionist,      /* thread struct             */
                              NULL,               /* default thread attributes */
@@ -182,22 +229,10 @@ void initReceptionist()
         /* arg to routine */
         errexit(errcode, "pthread_create");
     }
-
-    errcode = pthread_join(receptionist, NULL);
-
-    if (errcode)
-    {
-        errexit(errcode, "pthread_join");
-    }
 }
 
-void initDoctors(int numDoctors)
+void initDoctors()
 {
-    pthread_t doctors[3];
-    int doctorIds[3];
-    int errcode; /* holds pthread error code */
-    int *status; /* holds return code */
-
     int doctorId;
 
     /* Create doctor threads */
@@ -218,34 +253,10 @@ void initDoctors(int numDoctors)
             errexit(errcode, "pthread_create");
         }
     }
-
-    /* join the threads as they exit */
-    for (doctorId = 0; doctorId < numDoctors; doctorId++)
-    {
-        errcode = pthread_join(doctors[doctorId], (void **)&status);
-
-        if (errcode)
-        {
-            errexit(errcode, "pthread_join");
-        }
-
-        /* check thread's exit status, should be the same as the
-        thread number for this example */
-        if (*status != doctorId)
-        {
-            fprintf(stderr, "thread %d terminated abnormally\n", doctorId);
-            exit(1);
-        }
-    }
 }
 
-void initNurses(int numNurses)
+void initNurses()
 {
-    pthread_t nurses[3];
-    int nurseIds[3];
-    int errcode; /* holds pthread error code */
-    int *status; /* holds return code */
-
     int nurseId;
 
     /* Create doctor threads */
@@ -266,9 +277,53 @@ void initNurses(int numNurses)
             errexit(errcode, "pthread_create");
         }
     }
+}
 
-    /* join the threads as they exit */
-    for (nurseId = 0; nurseId < numNurses; nurseId++)
+void exitThreads()
+{
+    for (int patientId = 0; patientId < numPatients; patientId++)
+    {
+        errcode = pthread_join(patients[patientId], (void **)&status);
+
+        if (errcode)
+        {
+            errexit(errcode, "pthread_join");
+        }
+
+        /* check thread's exit status, should be the same as the
+        thread number for this example */
+        if (*status != patientId)
+        {
+            fprintf(stderr, "thread %d terminated abnormally\n", patientId);
+            exit(1);
+        }
+    }
+
+    errcode = pthread_join(receptionist, NULL);
+    if (errcode)
+    {
+        errexit(errcode, "pthread_join");
+    }
+
+    for (int doctorId = 0; doctorId < numDoctors; doctorId++)
+    {
+        errcode = pthread_join(doctors[doctorId], (void **)&status);
+
+        if (errcode)
+        {
+            errexit(errcode, "pthread_join");
+        }
+
+        /* check thread's exit status, should be the same as the
+        thread number for this example */
+        if (*status != doctorId)
+        {
+            fprintf(stderr, "thread %d terminated abnormally\n", doctorId);
+            exit(1);
+        }
+    }
+
+    for (int nurseId = 0; nurseId < numNurses; nurseId++)
     {
         errcode = pthread_join(nurses[nurseId], (void **)&status);
 
@@ -291,10 +346,21 @@ void initNurses(int numNurses)
 
 int main(int argc, char **argv)
 {
+    // Initialization for random
+    srand(time(NULL));
+
     // Get command line inputs
-    int numDoctors = stoiHandler(argv[1]);
-    int numNurses = numDoctors;
-    int numPatients = stoiHandler(argv[2]);
+    numDoctors = stoiHandler(argv[1]);
+    numNurses = numDoctors;
+    numPatients = stoiHandler(argv[2]);
+
+    patientAssignNurseIds = new int[numPatients];
+    patientsWaiting = new sem_t[numPatients];
+
+    nurseQueueProtect = new sem_t[numNurses];
+    nurseQueues = new std::queue<int>[numNurses];
+
+    doctorsReady = new sem_t[numDoctors];
 
     std::cout << "Run with " << numPatients << " patients, "
               << numNurses << " nurses, "
@@ -304,10 +370,12 @@ int main(int argc, char **argv)
 
     initSemaphores();
 
-    initPatients(numPatients);
+    initPatients();
     initReceptionist();
-    initDoctors(numDoctors);
-    initNurses(numNurses);
+    initDoctors();
+    initNurses();
+
+    exitThreads();
 
     return 0;
 }
