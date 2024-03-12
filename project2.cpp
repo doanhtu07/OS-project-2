@@ -76,6 +76,7 @@ int receptionistPatients = 0; // Count of patients the receptionist has received
 int registerPatientId = -1;     // Current patient id that receptionist is processing
 sem_t patientCheckIn;           // Patient just registered. Receptionist waits for a patient to checking in before register that patient with the nurse
 sem_t receptionistRegisterDone; // Receptionist finishes registering for current patient
+sem_t patientLeaveReceptionist; // Patient signals to receptionist that he/she leaves the receptionist. Receptionist then notices to nurse
 
 sem_t nursePatientsProtect; // Protection for count since all nurses have access to
 int nursePatients = 0;      // Count of patients all nurses have processed
@@ -119,11 +120,11 @@ void *patientThread(void *arg)
 
     printf("Patient %d leaves receptionist and sits in waiting room\n", patientId);
 
+    semPost(patientLeaveReceptionist, "patientLeaveReceptionist");
+
     semPost(waitEachPatientRegister, "waitEachPatientRegister");
 
     // --- Nurse phase
-
-    semPost(patientJoinWaitRoom[assignedNurseId], "patientJoinWaitRoom - assignedNurseId");
 
     semWait(patientWaitNurse[patientId], "patientWaitNurse - patientId");
 
@@ -169,6 +170,12 @@ void *receptionistThread(void *arg)
 
         // Tell patient that registration is done
         semPost(receptionistRegisterDone, "receptionistRegisterDone");
+
+        // Wait for the patient to leave and sit in the waiting to tell the nurse
+        semWait(patientLeaveReceptionist, "patientLeaveReceptionist");
+
+        // Tell nurse that a new patient joins waiting room
+        semPost(patientJoinWaitRoom[randomNurseId], "patientJoinWaitRoom - randomNurseId");
     }
 
     return arg;
@@ -289,6 +296,7 @@ void initSemaphores()
         int registerPatientId = -1;     // Current patient id that receptionist is processing
         sem_t patientCheckIn;           // Patient just registered. Receptionist waits for a patient to checking in before register that patient with the nurse
         sem_t receptionistRegisterDone; // Receptionist finishes registering for current patient
+        sem_t patientLeaveReceptionist; // Patient signals to receptionist that he/she leaves the receptionist. Receptionist then notices to nurse
 
         sem_t nursePatientsProtect; // Protection for count since all nurses have access to
         int nursePatients = 0;      // Count of patients all nurses have processed
@@ -315,6 +323,7 @@ void initSemaphores()
 
     semInit(patientCheckIn, "patientCheckIn", 0);
     semInit(receptionistRegisterDone, "receptionistRegisterDone", 0);
+    semInit(patientLeaveReceptionist, "patientLeaveReceptionist", 0);
 
     semInit(nursePatientsProtect, "nursePatientsProtect", 1);
 
@@ -510,6 +519,7 @@ int main(int argc, char **argv)
         int registerPatientId = -1;     // Current patient id that receptionist is processing
         sem_t patientCheckIn;           // Patient just registered. Receptionist waits for a patient to checking in before register that patient with the nurse
         sem_t receptionistRegisterDone; // Receptionist finishes registering for current patient
+        sem_t patientLeaveReceptionist; // Patient signals to receptionist that he/she leaves the receptionist. Receptionist then notices to nurse
 
         sem_t nursePatientsProtect; // Protection for count since all nurses have access to
         int nursePatients = 0;      // Count of patients all nurses have processed
