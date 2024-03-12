@@ -108,16 +108,17 @@ void *patientThread(void *arg)
     registerPatientId = patientId;
 
     semPost(patientCheckIn, "patientCheckIn");
+
     semWait(receptionistRegisterDone, "receptionistRegisterDone");
-
-    semPost(waitEachPatientRegister, "waitEachPatientRegister");
-
-    // --- Nurse phase
 
     int assignedNurseId = nurseOfPatient[patientId];
     int assignedDoctorId = assignedNurseId;
 
-    printf("Patient %d leaves receptionist and sits in waiting room for nurse %d\n", patientId, assignedNurseId);
+    printf("Patient %d leaves receptionist and sits in waiting room\n", patientId);
+
+    semPost(waitEachPatientRegister, "waitEachPatientRegister");
+
+    // --- Nurse phase
 
     semPost(patientJoinWaitRoom[assignedNurseId], "patientJoinWaitRoom - assignedNurseId");
 
@@ -134,6 +135,10 @@ void *patientThread(void *arg)
     printf("Patient %d receives advice from doctor %d\n", patientId, assignedDoctorId);
 
     semPost(patientLeave[assignedDoctorId], "patientLeave - assignedDoctorId");
+
+    // --- Leave phase
+
+    printf("Patient %d leaves\n", patientId);
 
     return arg;
 }
@@ -182,8 +187,6 @@ void *nurseThread(void *arg)
             continue;
 
         int patientId = nurseQueue[nurseId].front();
-
-        semPost(nurseQueueProtect[nurseId], "nurseQueueProtect - randomNurseId");
 
         // Wait for front patient to join wait room
         semWait(patientJoinWaitRoom[nurseId], "patientJoinWaitRoom - nurseId");
@@ -237,8 +240,6 @@ void *doctorThread(void *arg)
 
         // Wait for patient to leave
         semWait(patientLeave[doctorId], "patientLeave - doctorId");
-
-        printf("Patient %d leaves\n", patientId);
 
         // Reset current patient of doctor to no one
         patientOfDoctor[doctorId] = -1;
