@@ -78,6 +78,13 @@
     "random": "cpp",
     "numeric": "cpp",
     "stdlib.h": "c",
-    "types.h": "c"
+    "types.h": "c",
+    "*.tcc": "cpp",
+    "functional": "cpp",
+    "iterator": "cpp",
+    "memory_resource": "cpp",
+    "utility": "cpp",
+    "numbers": "cpp",
+    "cinttypes": "cpp"
   }
 }
