@@ -4,6 +4,9 @@
 #include <pthread.h>
 #include <semaphore.h>
 #include <queue>
+#include <cstdlib>
+#include <time.h>
+#include <stdio.h>
 
 #define errexit(code, str)                              \
     fprintf(stderr, "%s: %s\n", (str), strerror(code)); \
