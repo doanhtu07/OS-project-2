@@ -83,7 +83,7 @@ int nursePatients = 0;      // Count of patients all nurses have processed
 int *nurseOfPatient;     // Array (Size = Patients) - Assigned nurse of a patient
 sem_t *patientWaitNurse; // Array (Size = Patients) - Nurses can use this to signal each patient that it's their turn
 
-sem_t *nurseQueueProtect;    // Array (Size = Nurses) - Protection for queue since many patients have access to
+sem_t *nurseQueueProtect;    // Array (Size = Nurses) - Protection for queue since since the receptionist and nurses can work concurrently on these queues
 std::queue<int> *nurseQueue; // Array (Size = Nurses) - Waiting room of patients for each nurse
 sem_t *patientJoinWaitRoom;  // Array (Size = Nurses) - Each nurse takes a patient from waiting room. Patient posts when they join wait room
 
@@ -296,7 +296,7 @@ void initSemaphores()
         int *nurseOfPatient;     // Array (Size = Patients) - Assigned nurse of a patient
         sem_t *patientWaitNurse; // Array (Size = Patients) - Nurses can use this to signal each patient that it's their turn
 
-        sem_t *nurseQueueProtect;    // Array (Size = Nurses) - Protection for queue since many patients have access to
+        sem_t *nurseQueueProtect;    // Array (Size = Nurses) - Protection for queue since since the receptionist and nurses can work concurrently on these queues
         std::queue<int> *nurseQueue; // Array (Size = Nurses) - Waiting room of patients for each nurse
         sem_t *patientJoinWaitRoom;  // Array (Size = Nurses) - Each nurse takes a patient from waiting room. Patient posts when they join wait room
 
@@ -517,7 +517,7 @@ int main(int argc, char **argv)
         int *nurseOfPatient;     // Array (Size = Patients) - Assigned nurse of a patient
         sem_t *patientWaitNurse; // Array (Size = Patients) - Nurses can use this to signal each patient that it's their turn
 
-        sem_t *nurseQueueProtect;    // Array (Size = Nurses) - Protection for queue since many patients have access to
+        sem_t *nurseQueueProtect;    // Array (Size = Nurses) - Protection for queue since since the receptionist and nurses can work concurrently on these queues
         std::queue<int> *nurseQueue; // Array (Size = Nurses) - Waiting room of patients for each nurse
         sem_t *patientJoinWaitRoom;  // Array (Size = Nurses) - Each nurse takes a patient from waiting room. Patient posts when they join wait room
 
