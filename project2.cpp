@@ -102,6 +102,13 @@ void *patientThread(void *arg)
 {
     int patientId = *(int *)arg;
 
+    // Randomly assign a nurse to patient
+    int randomNurseId = randomInRange(0, numNurses - 1);
+    nurseOfPatient[patientId] = randomNurseId;
+
+    int assignedNurseId = randomNurseId;
+    int assignedDoctorId = assignedNurseId;
+
     // --- Register phase
 
     printf("Patient %d enters waiting room, waits for receptionist\n", patientId);
@@ -114,9 +121,6 @@ void *patientThread(void *arg)
     semPost(patientCheckIn, "patientCheckIn");
 
     semWait(receptionistRegisterDone, "receptionistRegisterDone");
-
-    int assignedNurseId = nurseOfPatient[patientId];
-    int assignedDoctorId = assignedNurseId;
 
     printf("Patient %d leaves receptionist and sits in waiting room\n", patientId);
 
@@ -156,14 +160,12 @@ void *receptionistThread(void *arg)
 
         printf("Receptionist receives patient %d\n", registerPatientId);
 
-        // Randomly assign that patient to a nurse
-        int randomNurseId = randomInRange(0, numNurses - 1);
-        nurseOfPatient[registerPatientId] = randomNurseId;
+        int nurseId = nurseOfPatient[registerPatientId];
 
         // Add that patient to that nurse's wait room
-        semWait(nurseQueueProtect[randomNurseId], "nurseQueueProtect - randomNurseId");
-        nurseQueue[randomNurseId].push(registerPatientId);
-        semPost(nurseQueueProtect[randomNurseId], "nurseQueueProtect - randomNurseId");
+        semWait(nurseQueueProtect[nurseId], "nurseQueueProtect - nurseId");
+        nurseQueue[nurseId].push(registerPatientId);
+        semPost(nurseQueueProtect[nurseId], "nurseQueueProtect - nurseId");
 
         // Increase processed patients for the only receptionist
         receptionistPatients++;
@@ -175,7 +177,7 @@ void *receptionistThread(void *arg)
         semWait(patientLeaveReceptionist, "patientLeaveReceptionist");
 
         // Tell nurse that a new patient joins waiting room
-        semPost(patientJoinWaitRoom[randomNurseId], "patientJoinWaitRoom - randomNurseId");
+        semPost(patientJoinWaitRoom[nurseId], "patientJoinWaitRoom - nurseId");
     }
 
     return arg;
